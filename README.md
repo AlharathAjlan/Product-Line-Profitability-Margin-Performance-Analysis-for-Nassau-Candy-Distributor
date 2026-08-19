@@ -97,6 +97,13 @@ Flip the target: predict Cost from Product, Division, Units, Sales, Region, Ship
 - write the report what we do , what we discover and the summary for this work  
 ### < Completed >
 
+## Step nine : Create StreamLite App.py 
+- Create basics for the app
+- Add Module  Product Profitability Overview 
+- Add Module Division Performance Dashboard 
+- Add Filters 
+### < Completed >
+
 
 
 
