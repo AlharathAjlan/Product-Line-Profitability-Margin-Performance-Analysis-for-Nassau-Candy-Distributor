@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score, mean_absolute_error
 
 # ---------------------------------------------------------------------
 # Page config
@@ -275,3 +279,246 @@ elif page == "Division Performance":
         )
     else:
         st.info("No remaining orders in this division after excluding that product.")
+
+
+# ---------------------------------------------------------------------
+# MODULE 3: Cost vs Margin Diagnostics
+# ---------------------------------------------------------------------
+elif page == "Cost vs Margin Diagnostics":
+    st.title("Cost vs Margin Diagnostics")
+
+    st.subheader("Cost vs Sales Scatter (color = Gross Margin %)")
+    fig1 = px.scatter(
+        filtered_pm, x="Total_Sales", y="Total_Cost", color="Gross_Margin_%",
+        size="Total_Units", hover_name="Product Name",
+        color_continuous_scale="RdYlGn", size_max=40,
+    )
+    max_val = max(filtered_pm["Total_Sales"].max(), filtered_pm["Total_Cost"].max())
+    fig1.add_trace(go.Scatter(
+        x=[0, max_val], y=[0, max_val], mode="lines",
+        line=dict(color="gray", dash="dash"), name="Cost = Sales (0% margin)", showlegend=True,
+    ))
+    fig1.update_layout(xaxis_title="Total Sales", yaxis_title="Total Cost")
+    st.plotly_chart(fig1, width="stretch")
+    st.caption(
+        "Points near the diagonal have thin margins regardless of size. "
+        "Point size reflects total units sold."
+    )
+
+    st.markdown("---")
+    st.subheader("Cost-Heavy, Margin-Poor Products")
+    cost_ratio_threshold = st.slider("Cost Ratio % threshold (flag above this)", 0, 100, 60)
+    cost_heavy = filtered_pm[filtered_pm["Cost_Ratio_%"] >= cost_ratio_threshold].sort_values(
+        "Cost_Ratio_%", ascending=False
+    )
+    if len(cost_heavy) > 0:
+        st.dataframe(
+            cost_heavy[["Product Name", "Division", "Total_Sales", "Total_Cost",
+                         "Cost_Ratio_%", "Gross_Margin_%"]],
+            width="stretch",
+        )
+    else:
+        st.info(f"No products exceed a {cost_ratio_threshold}% cost ratio.")
+
+    st.markdown("---")
+    st.subheader("Pricing Inefficiency Check")
+    st.caption(
+        "Compares Cost per Unit against Sales per Unit. A product priced in line with peers "
+        "but with disproportionately high cost per unit signals a cost/sourcing problem rather "
+        "than a pricing problem."
+    )
+    pricing_check = filtered_pm.copy()
+    pricing_check["Sales_per_Unit"] = (pricing_check["Total_Sales"] / pricing_check["Total_Units"]).round(2)
+    pricing_check["Cost_per_Unit"] = (pricing_check["Total_Cost"] / pricing_check["Total_Units"]).round(2)
+    fig2 = px.bar(
+        pricing_check.sort_values("Cost_Ratio_%", ascending=False),
+        x="Product Name", y=["Cost_per_Unit", "Sales_per_Unit"], barmode="group",
+    )
+    fig2.update_xaxes(tickangle=-40)
+    st.plotly_chart(fig2, width="stretch")
+
+    st.markdown("---")
+    st.subheader("Action Flags")
+
+    def diagnose(row):
+        if row["Gross_Margin_%"] < 20 and row["Total_Sales"] >= filtered_pm["Total_Sales"].median():
+            return "URGENT: Repricing or Cost Renegotiation"
+        elif row["Gross_Margin_%"] < 20:
+            return "Discontinuation Review"
+        elif row["Gross_Margin_%"] < 50:
+            return "Monitor — Below-Average Margin"
+        else:
+            return "Healthy"
+
+    flagged = filtered_pm.copy()
+    flagged["Action_Flag"] = flagged.apply(diagnose, axis=1)
+    flag_order = ["URGENT: Repricing or Cost Renegotiation", "Discontinuation Review",
+                  "Monitor — Below-Average Margin", "Healthy"]
+    flag_colors = {
+        "URGENT: Repricing or Cost Renegotiation": "#E63946",
+        "Discontinuation Review": "#F4A261",
+        "Monitor — Below-Average Margin": "#F9C74F",
+        "Healthy": "#2E86AB",
+    }
+    fig3 = px.bar(
+        flagged["Action_Flag"].value_counts().reindex(flag_order).fillna(0).reset_index(),
+        x="Action_Flag", y="count", color="Action_Flag", color_discrete_map=flag_colors, text="count",
+    )
+    st.plotly_chart(fig3, width="stretch")
+    st.dataframe(
+        flagged[["Product Name", "Division", "Total_Sales", "Gross_Margin_%", "Cost_Ratio_%", "Action_Flag"]]
+        .sort_values("Gross_Margin_%"),
+        width="stretch",
+    )
+
+# ---------------------------------------------------------------------
+# MODULE 4: Profit Concentration (Pareto) Analysis
+# ---------------------------------------------------------------------
+elif page == "Profit Concentration (Pareto)":
+    st.title("Profit Concentration (Pareto) Analysis")
+
+    def build_pareto(df_, group_col, value_col):
+        agg = df_.groupby(group_col)[value_col].sum().sort_values(ascending=False).reset_index()
+        agg["Cumulative_%"] = (agg[value_col].cumsum() / agg[value_col].sum() * 100).round(2)
+        agg["Rank_%"] = ((agg.index + 1) / len(agg) * 100).round(1)
+        return agg
+
+    pareto_metric = st.radio("Concentration metric", ["Revenue (Sales)", "Profit (Gross Profit)"], horizontal=True)
+    value_col = "Sales" if pareto_metric.startswith("Revenue") else "Gross Profit"
+
+    st.subheader(f"Product Concentration — {pareto_metric}")
+    pareto_products = build_pareto(filtered_df, "Product Name", value_col)
+    items_for_80 = int((pareto_products["Cumulative_%"] < 80).sum() + 1)
+    pct_items_for_80 = round(items_for_80 / len(pareto_products) * 100, 1)
+
+    col1, col2 = st.columns(2)
+    col1.metric("Products needed for 80%", f"{items_for_80} of {len(pareto_products)}")
+    col2.metric("% of catalog", f"{pct_items_for_80}%")
+
+    fig1 = go.Figure()
+    fig1.add_trace(go.Bar(x=pareto_products["Product Name"], y=pareto_products[value_col], name=pareto_metric))
+    fig1.add_trace(go.Scatter(
+        x=pareto_products["Product Name"], y=pareto_products["Cumulative_%"],
+        name="Cumulative %", yaxis="y2", line=dict(color="red"),
+    ))
+    fig1.add_hline(y=80, yref="y2", line_dash="dash", line_color="gray")
+    fig1.update_layout(
+        yaxis=dict(title=pareto_metric),
+        yaxis2=dict(title="Cumulative %", overlaying="y", side="right", range=[0, 105]),
+        xaxis=dict(tickangle=-40),
+    )
+    st.plotly_chart(fig1, width="stretch")
+    st.dataframe(pareto_products, width="stretch")
+
+    st.markdown("---")
+    st.subheader("Geographic Concentration — % of States Contributing 80% of Revenue")
+    pareto_states = build_pareto(filtered_df, "State/Province", "Sales")
+    states_for_80 = int((pareto_states["Cumulative_%"] < 80).sum() + 1)
+    col3, col4 = st.columns(2)
+    col3.metric("States needed for 80% of revenue", f"{states_for_80} of {len(pareto_states)}")
+    col4.metric("% of states", f"{round(states_for_80/len(pareto_states)*100, 1)}%")
+    st.dataframe(pareto_states.head(20), width="stretch")
+
+    st.markdown("---")
+    st.subheader("Regional Distribution & Over-Dependency Check")
+    region_stats = filtered_df.groupby("Region")["Sales"].sum().sort_values(ascending=False).reset_index()
+    region_stats["Revenue_Share_%"] = (region_stats["Sales"] / region_stats["Sales"].sum() * 100).round(2)
+    fig2 = px.bar(region_stats, x="Region", y="Revenue_Share_%", text="Revenue_Share_%", color="Region")
+    fig2.update_traces(texttemplate="%{text}%", textposition="outside")
+    st.plotly_chart(fig2, width="stretch")
+    st.caption(
+        "No region falling far below the others indicates diversified geographic exposure; "
+        "a dominant region would signal over-dependency risk."
+    )
+
+# ---------------------------------------------------------------------
+# MODULE 5: Cost Anomaly Detection (ML)
+# ---------------------------------------------------------------------
+elif page == "Cost Anomaly Detection":
+    st.title("Cost Anomaly Detection (Machine Learning)")
+    st.caption(
+        "A regression model learns typical cost patterns from Sales, Units, Division, Region, "
+        "Ship Mode, and order timing — then flags individual orders whose actual cost deviates "
+        "sharply from what the model expects."
+    )
+
+    if len(filtered_df) < 50:
+        st.warning("Not enough filtered orders to train a reliable model. Broaden your filters.")
+    else:
+        model_df = filtered_df.copy()
+        model_df["OrderMonth"] = model_df["Order Date"].dt.month
+        model_df["OrderQuarter"] = model_df["Order Date"].dt.quarter
+
+        X = pd.get_dummies(
+            model_df[["Sales", "Units", "Division", "Region", "Ship Mode", "OrderMonth", "OrderQuarter"]],
+            columns=["Division", "Region", "Ship Mode", "OrderMonth", "OrderQuarter"],
+            drop_first=True,
+        )
+        y_cost = model_df["Cost"]
+
+        X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
+            X, y_cost, model_df.index, test_size=0.2, random_state=42
+        )
+
+        model = LinearRegression()
+        model.fit(X_train, y_train)
+        preds = model.predict(X_test)
+
+        col1, col2 = st.columns(2)
+        col1.metric("Model R²", f"{r2_score(y_test, preds):.4f}")
+        col2.metric("Model MAE", f"${mean_absolute_error(y_test, preds):.2f}")
+
+        results = model_df.loc[idx_test, ["Product Name", "Division", "Sales", "Cost"]].copy()
+        results["Predicted_Cost"] = preds
+        results["Residual"] = results["Cost"] - results["Predicted_Cost"]
+        results["Abs_Residual"] = results["Residual"].abs()
+
+        std_multiplier = st.slider("Anomaly sensitivity (standard deviations)", 1.0, 3.0, 2.0, 0.5)
+        threshold = std_multiplier * results["Residual"].std()
+        results["Anomaly"] = results["Abs_Residual"] > threshold
+
+        st.metric(
+            "Flagged Anomalies",
+            f"{int(results['Anomaly'].sum())} of {len(results)} test orders",
+            delta=f"±${threshold:.2f} threshold",
+        )
+
+        normal = results[~results["Anomaly"]]
+        anomalies = results[results["Anomaly"]]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=normal["Cost"], y=normal["Predicted_Cost"], mode="markers", name="Normal",
+            marker=dict(color="#2E86AB", opacity=0.5, size=6),
+        ))
+        fig.add_trace(go.Scatter(
+            x=anomalies["Cost"], y=anomalies["Predicted_Cost"], mode="markers", name="Anomaly",
+            marker=dict(color="#E63946", size=11, line=dict(color="black", width=1)),
+            text=anomalies["Product Name"], hovertemplate="%{text}<br>Actual: %{x}<br>Predicted: %{y}",
+        ))
+        max_val = max(results["Cost"].max(), results["Predicted_Cost"].max())
+        fig.add_trace(go.Scatter(
+            x=[0, max_val], y=[0, max_val], mode="lines",
+            line=dict(color="gray", dash="dash"), name="Perfect prediction",
+        ))
+        fig.update_layout(xaxis_title="Actual Cost", yaxis_title="Predicted Cost")
+        st.plotly_chart(fig, width="stretch")
+
+        st.subheader("Which products are flagged most often?")
+        if len(anomalies) > 0:
+            anomaly_counts = anomalies["Product Name"].value_counts().reset_index()
+            anomaly_counts.columns = ["Product Name", "Times Flagged"]
+            fig2 = px.bar(anomaly_counts, x="Product Name", y="Times Flagged", color="Times Flagged",
+                          color_continuous_scale="Reds")
+            fig2.update_xaxes(tickangle=-40)
+            st.plotly_chart(fig2, width="stretch")
+
+            st.subheader("Flagged Orders (sorted by severity)")
+            st.dataframe(
+                anomalies.sort_values("Abs_Residual", ascending=False)[
+                    ["Product Name", "Division", "Sales", "Cost", "Predicted_Cost", "Residual"]
+                ],
+                width="stretch",
+            )
+        else:
+            st.info("No anomalies flagged at this sensitivity level.")

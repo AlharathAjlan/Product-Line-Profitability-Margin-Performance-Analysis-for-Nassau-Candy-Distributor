@@ -1,111 +1,105 @@
-# Analytical Methodology (Step-by-Step)
+# Nassau Candy Distributor — Product Line Profitability & Margin Analytics
 
-## Step one : Data Cleaning & Validation
-• Validate cost and sales values
-• Remove zero-sales or invalid profit records
-• Handle missing unit values
-• Standardize product and division labels
-### < Completed >
+Interactive Streamlit dashboard analyzing product-line profitability, division performance, cost structure, and revenue concentration for Nassau Candy Distributor. Includes a machine learning module for automated cost anomaly detection. Built as part of a Machine Learning internship project (Unified Mentor).
 
+## Overview
 
-## Step tow : Profitability Metric Calculation
-For each product:
+Sales volume alone is misleading for a distributor — some products sell in high volume but generate low profit, while others are highly efficient but too small to matter. This project identifies **which products truly drive profit**, **which divisions underperform financially**, and **where pricing, sourcing, or product rationalization is needed**.
 
-• Gross Margin (%)
-• Profit per unit
-• Total profit contribution
+**Type:** Data Analytics (diagnostic segmentation & concentration analysis), extended with a supervised Machine Learning module for cost anomaly detection.
 
-### < Completed >
+## Key Findings
 
-## Step three : Product-Level Profitability Analysis
-• Rank products by:
-○ Gross profit
-○ Gross margin
-• Identify:
-○ High-profit / high-margin products
-○ High-sales / low-margin products
-○ Low-sales / low-profit products
+- Overall gross margin: **65.91%**.
+- Just **5 of 15 products** (33.3%) — the entire Wonka Bar line — generate over **92% of revenue** and **95% of profit**.
+- **Kazookles** is the one clear, quantified problem product: lowest margin (7.69%), the sole driver of the Other division's underperformance, and the dominant source of flagged cost anomalies in the ML model (~50% of all flagged orders).
+- Excluding Kazookles, the Other division's margin rises from 44.84% to **50.14%** — the issue is product-specific, not division-wide.
+- Geographic revenue is comparatively diversified: 27.1% of states are needed for 80% of revenue, vs. 33.3% of products for the same share — the real over-dependency risk is in the product portfolio, not customer geography.
+- Order timing (season, quarter, day of week) has no measurable effect on margin — confirmed independently by both aggregation and a regression model.
 
-### < Completed >
+Full methodology and findings are documented in the accompanying research paper.
 
-## Step four : Division-Level Performance Analysis
-• Aggregate metrics by Division
-• Compare:
-○ Average margin by division
-○ Revenue vs profit imbalance
-• Identify divisions with:
-○ Strong financial efficiency
-○ Structural margin issues
+## Dashboard Modules
 
-### < Completed >
+| Page | Contents |
+|---|---|
+| Product Profitability Overview | Margin leaderboard, profit contribution chart, 4-category product classification, full product table |
+| Division Performance | Revenue vs. profit comparison, margin distribution with efficiency status, interactive "isolate a product's effect on its division" tool |
+| Cost vs Margin Diagnostics | Cost-vs-sales scatter, adjustable cost-ratio flagging, pricing-vs-cost comparison, Action Flags (URGENT/Monitor/Healthy) |
+| Profit Concentration (Pareto) | Revenue/profit Pareto charts with cumulative %, state-level and regional concentration |
+| Cost Anomaly Detection | Live-trained regression model flagging orders with abnormal cost structure, adjustable sensitivity |
 
-## Step five : Profit Concentration (Pareto) Analysis
-• Determine % of products contributing:
-○ 80% of revenue
-○ 80% of profit
-• Detect congestion-prone states or regionIdentify over-dependency risks
+All pages respond to global filters: Order Date range, Division, minimum margin threshold, and product search.
 
-### < Completed >
+## KPIs Tracked
 
-## Step six : Cost Structure Diagnostics
-• Cost vs sales scatter analysis
-• Identify:
-○ Cost-heavy, margin-poor products
-○ Pricing inefficiencies
-• Flag products needing:
-○ Repricing
-○ Cost renegotiation
-○ Discontinuation review
+- **Gross Margin (%)** — Gross Profit ÷ Sales
+- **Profit per Unit** — Gross Profit ÷ Units
+- **Revenue Contribution** — product sales ÷ total sales
+- **Profit Contribution** — product profit ÷ total profit
+- **Margin Volatility** — variability of margin over time (tested via ML; found to be negligible)
 
-### < Completed >
+## Tech Stack
 
-## Step seven  : Predict by Machine Learning 
-#### Level 1: Sales + Cost → Margin (sanity-check baseline)
+- [Streamlit](https://streamlit.io/) — dashboard framework
+- [Pandas](https://pandas.pydata.org/) — data processing
+- [Plotly](https://plotly.com/python/) — interactive charts
+- [scikit-learn](https://scikit-learn.org/) — regression modeling for cost anomaly detection
 
-Predict Gross Margin % or Gross Profit using only Sales and Cost. Since Margin is literally calculated from these two numbers, this will fit almost perfectly (R² near 1.0) -- that's expected, not a bug. Use this purely to learn the mechanics: train/test split, fitting a LinearRegression, and reading R²/MAE -- not as a real predictive insight, since the model is just re-deriving arithmetic it was already given.
+## Setup & Local Run
 
-----------
+```bash
+# clone the repo
+git clone https://github.com/AlharathAjlan/Product-Line-Profitability-Margin-Performance-Analysis-for-Nassau-Candy-Distributor.git
+cd Product-Line-Profitability-Margin-Performance-Analysis-for-Nassau-Candy-Distributor
 
-#### Level 2: Add Units, Division, Region (drop Cost)
+# create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 
-Now remove Cost entirely and predict Margin % or Gross Profit using Sales, Units, Division, Region, and Ship Mode instead. This is a genuinely harder, real task -- the model has to learn the typical cost/margin pattern for each division and region from historical examples, without being handed the answer. Encode Division/Region/Ship Mode as dummy variables (pd.get_dummies). Expect a meaningfully lower R² than Level 1 -- that drop is the honest measure of how much these categorical features actually explain.
+# install dependencies
+pip install -r requirements.txt
 
----------
+# run the app
+python -m streamlit run app.py
+```
 
+The app expects a CSV file in the project folder with the following columns:
 
-#### Level 3: Add Order Date features (seasonality)
+```
+Row ID, Order ID, Order Date, Ship Date, Ship Mode, Customer ID,
+Country/Region, City, State/Province, Postal Code, Division, Region,
+Product ID, Product Name, Sales, Units, Gross Profit, Cost
+```
 
-Extract Month, Quarter, and DayOfWeek from Order Date and add them as features. This tests whether margin/profit varies by season or time of year -- directly relevant to your brief's 'Margin Volatility' KPI (variability of margin over time), which you haven't built yet. If these date features meaningfully improve the model, that's evidence of real seasonal margin patterns worth reporting.
+Update the `DATA_PATH` variable near the top of `app.py` to match your filename.
 
------
+## Data Notes
+**Known data quality note:** `Ship Date` values in the source dataset fall systematically 6 months to 4+ years after `Order Date` across the entire dataset. This was investigated and confirmed to be a structural characteristic of the data (not a small subset of errors), so shipping-delay metrics are intentionally excluded from this analysis.
 
-#### Level 4: Add State/Province (geography)
+## Machine Learning Module
 
-Add State/Province (or Region, if not already included) as a feature. Tests whether geography explains any margin variation beyond product and time -- ties back to your Step 5 Pareto geographic analysis. Given what you found there (revenue is diversified, not concentrated), I'd expect this to add relatively little predictive power -- which itself is a useful finding: margin is driven by product, not location.
+The Cost Anomaly Detection page trains a linear regression model live on the currently filtered data to predict `Cost` from `Sales`, `Units`, `Division`, `Region`, `Ship Mode`, and order timing. Orders whose actual cost deviates from the model's prediction beyond an adjustable threshold (in standard deviations) are flagged for review. This operationalizes the manual cost diagnostics into a capability that can flag future orders automatically rather than requiring periodic manual review.
 
------
+A staged model-development process (baseline sanity check → drop cost → add seasonality → predict cost directly) is documented in the research paper, validating that product/division — not time or geography — is the primary driver of both profit and cost anomalies.
 
-#### Level 5 (most valuable): Predict Cost directly — anomaly detection
+## Project Structure
 
-Flip the target: predict Cost from Product, Division, Units, Sales, Region, Ship Mode, and date features. Then compare each order's actual Cost to the model's predicted Cost -- large gaps flag orders where costs were abnormally high or low for that context. This is the most genuinely useful model for your project: it operationalizes Step 6's cost diagnostics into something that automatically flags future anomalous orders (like Kazookles) instead of requiring manual review every time.
+```
+nassau_dashboard/
+├── app.py              # Streamlit dashboard (5 modules)
+├── requirements.txt
+├── README.md
+├── .gitignore
+└── Nassau Candy Distributor.csv
+```
 
------
+## Deliverables
 
-### < Completed >
+- Report paper (EDA, profitability analysis, ML validation, insights, recommendations)
+- This Streamlit dashboard (live analytics)
+- Executive summary for stakeholders
 
-## Step eight : Write the report with out the plot 
-- write the report what we do , what we discover and the summary for this work  
-### < Completed >
+## Status
 
-## Step nine : Create StreamLite App.py 
-- Create basics for the app
-- Add Module  Product Profitability Overview 
-- Add Module Division Performance Dashboard 
-- Add Filters 
-### < Completed >
-
-
-
-
-
-
+All Dashboard Modules and User Capabilities (date range selector, division filter, margin threshold slider, product search) from the project requirements are implemented, plus an additional ML-powered cost anomaly detection module.
